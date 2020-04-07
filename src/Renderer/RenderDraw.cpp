@@ -19,7 +19,8 @@
         break;                                                                                     \
     }
 
-#if defined(USE_GLES)
+#if defined(USE_GLES) || defined(USE_GL3)
+extern uint32_t _defaultTex;
 extern int _inPos;
 extern int _inColor;
 extern int _inUV;
@@ -77,9 +78,36 @@ bool RenderDraw_DrawQuad(const DrawQuadCmd &cmd, RenderState *state)
     {
         RenderState_SetColor(state, cmd.rgba);
     }
-#if defined(USE_GL)
+    // clang-format off
+    const float uv[] = {
+         0.0f, cmd.v,
+        cmd.u, cmd.v,
+         0.0f, 0.0f,
+        cmd.u, 0.0f,
+    };
+    const float v[] = {
+        0.0f, float(cmd.height),
+        float(cmd.width), float(cmd.height),
+        0.0f, 0.0f,
+        float(cmd.width), 0.0f,
+    };
+    const float v_mirrored[] = {
+        float(cmd.width), float(cmd.height),
+        0.0f, float(cmd.height),
+        float(cmd.width), 0.0f,
+        0.0f, 0.0f,
+    };
+    // clang-format on
+    const auto &vb = cmd.mirrored ? v_mirrored : v;
+#if defined(USE_GL2)
     glTranslatef((GLfloat)cmd.x, (GLfloat)cmd.y, 0.0f);
     glBegin(GL_TRIANGLE_STRIP);
+    for (int i = 0; i < sizeof(v); i += 2)
+    {
+        glTexCoord2f(uv[i], uv[i + 1]);
+        glVertex2i(vb[i], vb[i + 1]);
+    }
+    /*
     if (!cmd.mirrored)
     {
         glTexCoord2f(0.0f, cmd.v);
@@ -102,35 +130,18 @@ bool RenderDraw_DrawQuad(const DrawQuadCmd &cmd, RenderState *state)
         glTexCoord2f(cmd.u, 0.0f);
         glVertex2i(0, 0);
     }
+    */
     glEnd();
     glTranslatef(-(GLfloat)cmd.x, -(GLfloat)cmd.y, 0.0f);
 #else
     // TODO: gles - quad
-    const float uv[] = {
-         0.0f, cmd.v,
-        cmd.u, cmd.v,
-         0.0f, 0.0f,
-        cmd.u, 0.0f,
-    };
-    const float v[] = {
-        0.0f, float(cmd.height),
-        float(cmd.width), float(cmd.height),
-        0.0f, 0.0f,
-        float(cmd.width), 0.0f,
-    };
-    const float v_mirrored[] = {
-        float(cmd.width), float(cmd.height),
-        0.0f, float(cmd.height),
-        float(cmd.width), 0.0f,
-        0.0f, 0.0f,
-    };
     glm::mat4 model(1.0f);
     model = glm::translate(model, glm::vec3(cmd.x, cmd.y, 0.0f));
     GL_CHECK(glUseProgram(_pProg));
     GL_CHECK(glUniformMatrix4fv(_uModel, 1, false, glm::value_ptr(model)));
     GL_CHECK(glVertexAttribPointer(_inUV, 2, GL_FLOAT, GL_FALSE, 0, uv));
     GL_CHECK(glEnableVertexAttribArray(_inUV));
-    GL_CHECK(glVertexAttribPointer(_inPos, 2, GL_FLOAT, GL_FALSE, 0, cmd.mirrored ? v_mirrored : v));
+    GL_CHECK(glVertexAttribPointer(_inPos, 2, GL_FLOAT, GL_FALSE, 0, vb));
     GL_CHECK(glEnableVertexAttribArray(_inPos));
     GL_CHECK(glUniform1i(_uTex, 0));
     GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, 0, 4));
@@ -148,11 +159,37 @@ bool RenderDraw_DrawRotatedQuad(const DrawRotatedQuadCmd &cmd, RenderState *stat
     {
         RenderState_SetColor(state, cmd.rgba);
     }
-#if defined(USE_GL)
+    // clang-format off
+    const float uv[] = {
+         0.0f, cmd.v,
+        cmd.u, cmd.v,
+         0.0f, 0.0f,
+        cmd.u, 0.0f,
+    };
+    const float v[] = {
+        0.0f, float(cmd.height),
+        float(cmd.width), float(cmd.height),
+        0.0f, 0.0f,
+        float(cmd.width), 0.0f,
+    };
+    const float v_mirrored[] = {
+        float(cmd.width), float(cmd.height),
+        0.0f, float(cmd.height),
+        float(cmd.width), 0.0f,
+        0.0f, 0.0f,
+    };
+    // clang-format on
+    const auto &vb = cmd.mirrored ? v_mirrored : v;
+#if defined(USE_GL2)
     glTranslatef((GLfloat)cmd.x, (GLfloat)cmd.y, 0.0f);
     glRotatef(cmd.angle, 0.0f, 0.0f, 1.0f);
     glBegin(GL_TRIANGLE_STRIP);
-    if (!cmd.mirrored)
+    for (int i = 0; i < sizeof(v); i += 2)
+    {
+        glTexCoord2f(uv[i], uv[i + 1]);
+        glVertex2i(vb[i], vb[i + 1]);
+    }
+    /*if (!cmd.mirrored)
     {
         glTexCoord2f(0.0f, cmd.v);
         glVertex2i(0, cmd.height);
@@ -173,30 +210,12 @@ bool RenderDraw_DrawRotatedQuad(const DrawRotatedQuadCmd &cmd, RenderState *stat
         glVertex2i(cmd.width, 0);
         glTexCoord2f(cmd.u, 0.0f);
         glVertex2i(0, 0);
-    }
+    }*/
     glEnd();
     glTranslatef(-(GLfloat)cmd.x, -(GLfloat)cmd.y, 0.0f);
     glRotatef(cmd.angle, 0.0f, 0.0f, -1.0f);
 #else
     // TODO: gles - rotated quad
-    const float uv[] = {
-         0.0f, cmd.v,
-        cmd.u, cmd.v,
-         0.0f, 0.0f,
-        cmd.u, 0.0f,
-    };
-    const float v[] = {
-        0.0f, float(cmd.height),
-        float(cmd.width), float(cmd.height),
-        0.0f, 0.0f,
-        float(cmd.width), 0.0f,
-    };
-    const float v_mirrored[] = {
-        float(cmd.width), float(cmd.height),
-        0.0f, float(cmd.height),
-        float(cmd.width), 0.0f,
-        0.0f, 0.0f,
-    };
     glm::mat4 model(1.0f);
     model = glm::translate(model, glm::vec3(cmd.x, cmd.y, 0.0f));
     model = glm::rotate(model, cmd.angle, glm::vec3(0.0f, 0.0f, 1.0f));
@@ -204,7 +223,7 @@ bool RenderDraw_DrawRotatedQuad(const DrawRotatedQuadCmd &cmd, RenderState *stat
     GL_CHECK(glUniformMatrix4fv(_uModel, 1, false, glm::value_ptr(model)));
     GL_CHECK(glVertexAttribPointer(_inUV, 2, GL_FLOAT, GL_FALSE, 0, uv));
     GL_CHECK(glEnableVertexAttribArray(_inUV));
-    GL_CHECK(glVertexAttribPointer(_inPos, 2, GL_FLOAT, GL_FALSE, 0, cmd.mirrored ? v_mirrored : v));
+    GL_CHECK(glVertexAttribPointer(_inPos, 2, GL_FLOAT, GL_FALSE, 0, vb));
     GL_CHECK(glEnableVertexAttribArray(_inPos));
     GL_CHECK(glUniform1i(_uTex, 0));
     GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, 0, 4));
@@ -230,7 +249,7 @@ bool RenderDraw_DrawCharacterSitting(const DrawCharacterSittingCmd &cmd, RenderS
     const float h09 = height * cmd.h9mod;
     const float widthOffset = (float)(width + s_sittingCharacterOffset);
 
-#if defined(USE_GL)
+#if defined(USE_GL2)
     glTranslatef(x, y, 0.0f);
     glBegin(GL_TRIANGLE_STRIP);
     if (cmd.mirror)
@@ -344,7 +363,7 @@ bool RenderDraw_DrawLandTile(const DrawLandTileCmd &cmd, RenderState *state)
     const float translateY = cmd.y - 22.0f;
     const auto &rc = cmd.rect;
 
-#if defined(USE_GL)
+#if defined(USE_GL2)
     glTranslatef(translateX, translateY, 0.0f);
 
     glBegin(GL_TRIANGLE_STRIP);
@@ -394,7 +413,7 @@ bool RenderDraw_DrawShadow(const DrawShadowCmd &cmd, RenderState *state)
     const auto translateY = GLfloat(cmd.y + height * 0.75);
     const float ratio = height / width;
 
-#if defined(USE_GL)
+#if defined(USE_GL2)
     glTranslatef(x, translateY, 0.0f);
     glBegin(GL_TRIANGLE_STRIP);
     if (cmd.mirror)
@@ -454,7 +473,7 @@ bool RenderDraw_DrawCircle(const DrawCircleCmd &cmd, RenderState *state)
     const float pi = (float)XUO_M_PI * 2.0f;
     const auto radius = cmd.radius;
 
-#if defined(USE_GL)
+#if defined(USE_GL2)
     glDisable(GL_TEXTURE_2D);
     glTranslatef((GLfloat)cmd.x, (GLfloat)cmd.y, 0.0f);
     glBegin(GL_TRIANGLE_FAN);
@@ -482,7 +501,8 @@ bool RenderDraw_DrawUntexturedQuad(const DrawUntexturedQuadCmd &cmd, RenderState
 {
     ScopedPerfMarker(__FUNCTION__);
 
-    const auto colored = memcmp(g_ColorInvalid.rgba, cmd.color.rgba, sizeof(g_ColorInvalid.rgba)) != 0;
+    const auto colored =
+        memcmp(g_ColorInvalid.rgba, cmd.color.rgba, sizeof(g_ColorInvalid.rgba)) != 0;
     const auto blend = colored && cmd.color[3] < 1.f;
     if (colored)
     {
@@ -499,7 +519,7 @@ bool RenderDraw_DrawUntexturedQuad(const DrawUntexturedQuadCmd &cmd, RenderState
         }
     }
 
-#if defined(USE_GL)
+#if defined(USE_GL2)
     glDisable(GL_TEXTURE_2D);
     glTranslatef((GLfloat)cmd.x, (GLfloat)cmd.y, 0.0f);
     glBegin(GL_TRIANGLE_STRIP);
@@ -551,7 +571,7 @@ bool RenderDraw_DrawLine(const DrawLineCmd &cmd, RenderState *state)
         }
     }
 
-#if defined(USE_GL)
+#if defined(USE_GL2)
     glDisable(GL_TEXTURE_2D);
     glBegin(GL_LINES);
     glVertex2i(cmd.x0, cmd.y0);
@@ -748,8 +768,59 @@ bool RenderDraw_GetFrameBufferPixels(const GetFrameBufferPixelsCmd &cmd, RenderS
     return true;
 }
 
+bool RenderDraw_DrawTest()
+{
+    // clang-format off
+#if defined(USE_GL3) || defined(USE_GLES2)
+    //ScopedPerfMarker(__FUNCTION__);
+
+    const GenericVertex data[] = {
+        { { -1.0f, -1.0f }, { 0.0f, 0.0f }, 0xff00ffff },
+        { { -1.0f,  1.0f }, { 0.0f, 1.0f }, 0xff00ffff },
+        { {  1.0f,  1.0f }, { 1.0f, 1.0f }, 0xff00ffff },
+        { {  1.0f, -1.0f }, { 1.0f, 1.0f }, 0xff00ffff },
+    };
+    const unsigned int idx[] = { 0, 1, 2, 3 };
+    GL_CHECK(glClearColor(0.4f, 0.0f, 0.0f, 0.0f));
+    GL_CHECK(glClear(GL_COLOR_BUFFER_BIT));
+    GL_CHECK(glUseProgram(_pProg));
+#if !defined(USE_GLES2)
+    uint32_t vao = 0;
+    GL_CHECK(glGenVertexArrays(1, &vao));
+    GL_CHECK(glBindVertexArray(vao));
+#endif // #if !defined(USE_GLES2)
+    uint32_t vbo = 0;
+    GL_CHECK(glGenBuffers(1, &vbo));
+    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, vbo));
+    GL_CHECK(glBufferData(GL_ARRAY_BUFFER, sizeof(data), data, GL_STATIC_DRAW));
+
+    GL_CHECK(glEnableVertexAttribArray(_inPos));
+    GL_CHECK(glEnableVertexAttribArray(_inUV));
+    GL_CHECK(glEnableVertexAttribArray(_inColor));
+    GL_CHECK(glVertexAttribPointer(_inPos, 2, GL_FLOAT, GL_FALSE, sizeof(GenericVertex), (GLvoid*)OFFSETOF(GenericVertex, pos)));
+    GL_CHECK(glVertexAttribPointer(_inUV, 2, GL_FLOAT, GL_FALSE, sizeof(GenericVertex), (GLvoid*)OFFSETOF(GenericVertex, uv)));
+    GL_CHECK(glVertexAttribPointer(_inColor, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(GenericVertex), (GLvoid*)OFFSETOF(GenericVertex, col)));
+
+    uint32_t vio = 0;
+    GL_CHECK(glGenBuffers(1, &vio));
+    GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vio));
+    GL_CHECK(glBufferData(GL_ELEMENT_ARRAY_BUFFER, 4 * sizeof(unsigned int), idx, GL_STATIC_DRAW));
+
+    GL_CHECK(glUniform1i(_uTex, 0)); // texture unit 0
+    GL_CHECK(glDrawArrays(GL_TRIANGLE_FAN, 0, 4));
+
+    GL_CHECK(glDeleteBuffers(1, &vbo));
+    GL_CHECK(glDeleteBuffers(1, &vio));
+#if !defined(USE_GLES2)
+    GL_CHECK(glDeleteVertexArrays(1, &vao));
+#endif // #if !defined(USE_GLES2)
+#endif // #if defined(USE_GL3) || defined(USE_GLES2)
+    // clang-format on
+}
+
 bool RenderDraw_Execute(RenderCmdList *cmdList)
 {
+    //RenderDraw_DrawTest(); // TODO: wtf?
     if (cmdList->immediateMode)
     {
         return false;
@@ -809,5 +880,6 @@ bool RenderDraw_Execute(RenderCmdList *cmdList)
                 break;
         }
     }
+
     return true;
 }
