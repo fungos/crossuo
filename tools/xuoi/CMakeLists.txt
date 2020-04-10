@@ -37,6 +37,7 @@ set(XUOL_SRCS
   mft.h
   common.cpp
   common.h
+  http.cpp
   xuo_updater.cpp
   xuo_updater.h
   xuolauncher.cpp
