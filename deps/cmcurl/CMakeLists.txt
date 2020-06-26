@@ -612,7 +612,11 @@ endif()
 # Check for symbol dlopen (same as HAVE_LIBDL)
 check_library_exists("${CURL_LIBS}" dlopen "" HAVE_DLOPEN)
 
-if(1) # but XUO need it # This code not needed for building within CMake.
+if(1) # FIXME: add zlib_amalg
+set(HAVE_LIBZ OFF)
+set(HAVE_ZLIB_H OFF)
+set(USE_ZLIB OFF)
+else()
 option(CURL_ZLIB "Set to ON to enable building curl with zlib support." ON)
 set(HAVE_LIBZ OFF)
 set(HAVE_ZLIB_H OFF)
