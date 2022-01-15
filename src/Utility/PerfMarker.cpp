@@ -1,6 +1,8 @@
 #include "PerfMarker.h"
 
-// #define PERFMARKERS_ENABLED
+#include <external/gfx/gfx.h>
+
+#define PERFMARKERS_ENABLED
 
 // TODO renderer add a cmd for this or it won't work unless in immediate mode
 // 'label' lifetime is assumed to be valid until the current cmd list is executed

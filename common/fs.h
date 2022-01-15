@@ -339,7 +339,14 @@ FS_PRIVATE void fs_close(FILE *fp)
 FS_PRIVATE size_t fs_size(FILE *fp)
 {
     assert(fp);
-    return GetFileSize(fp, nullptr);
+
+    LARGE_INTEGER size{};
+    if (GetFileSizeEx(fp, &size))
+    {
+        return size.QuadPart;
+    }
+
+    return 0;
 }
 
 FS_PRIVATE uint64_t fs_timestamp_write(const fs_path &path)

@@ -3,6 +3,7 @@
 #include "../Renderer/RenderInternal.h"
 #include "../Utility/PerfMarker.h"
 #include <common/logging/logging.h>
+#include <common/fs.h>
 #include <assert.h>
 #include <string.h> // memcmp, memcpy
 #include <stdlib.h> // malloc
@@ -29,19 +30,23 @@ extern uint32_t _vao;
 extern uint32_t _vbo;
 extern uint32_t _vio;
 extern uint32_t _defaultTex;
-extern int _inPos;
-extern int _inColor;
-extern int _inUV;
+extern int _uColor;
+extern int _uAlphaTest;
+extern int _uMirror;
+extern int _uColorMapEnabled;
+extern int _uUV;
 extern int _uProjectionView;
 extern int _uModel;
 extern int _uTex;
 extern int _pProg;
 uint32_t _vao = 0;
-uint32_t _vibuffers[2] = { 0, 0 };
+// uint32_t _vibuffers[2] = { 0, 0 };
 uint32_t _defaultTex = 0;
-int _inPos = 0;
-int _inColor = 0;
-int _inUV = 0;
+int _uColor = 0;
+int _uAlphaTest = 0;
+int _uMirror = 0;
+int _uColorMapEnabled = 0;
+int _uUV = 0;
 int _uProjectionView = 0;
 int _uModel = 0;
 int _uTex = 0;
@@ -56,6 +61,9 @@ float4 g_ColorInvalid = { *(float *)&g_iColorInvalid,
                           *(float *)&g_iColorInvalid,
                           *(float *)&g_iColorInvalid,
                           *(float *)&g_iColorInvalid };
+
+const char *g_uber_vs_src = nullptr;
+const char *g_uber_fs_src = nullptr;
 
 struct
 {
@@ -94,6 +102,55 @@ bool float3::operator!=(const float3 &other) const
 {
     return !(*this == other);
 }
+
+#if defined(USE_GL3)
+const char *read_src_from_file(const char *path)
+{
+    // auto fvs = fs_open(fs_path_from(path), FS_READ);
+    auto fvs = fopen(path, "rt");
+    if (!fvs)
+    {
+        return nullptr;
+    }
+
+    // auto size = fs_size(fvs);
+    // if (!size)
+    // {
+    //     return nullptr;
+    // }
+    if (fseek(fvs, 0, SEEK_END) != 0)
+    {
+        return nullptr;
+    }
+
+    auto size = size_t(ftell(fvs));
+    if (!size)
+    {
+        return nullptr;
+    }
+
+    if (fseek(fvs, 0, SEEK_SET) != 0)
+    {
+        return nullptr;
+    }
+
+    char *ret = (char *)malloc(size);
+    memset(ret, 0, size);
+    if (ret)
+    {
+        auto read_bytes = fread(ret, 1, size, fvs);
+        if (read_bytes != size && (read_bytes == 0 || feof(fvs) == 0))
+        {
+            free(ret);
+            return nullptr;
+        }
+    }
+
+    // fs_close(fvs);
+    fclose(fvs);
+    return ret;
+}
+#endif // #if defined(USE_GL3)
 
 bool Render_Init(SDL_Window *window)
 {
@@ -182,13 +239,31 @@ bool Render_Init(SDL_Window *window)
     const GLfloat lightAmbientValues[] = { lav, lav, lav, lav };
     GL_CHECK(glLightModelfv(GL_LIGHT_MODEL_AMBIENT, &lightAmbientValues[0]));
     GL_CHECK(glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_FALSE));
-#else
+#else // #if defined(USE_GL2)
     GL_CHECK(glClearDepthf(1.0)); // Depth Buffer Setup
+
+#define UBER_VS_PATH "shaders/uber.vs"
+#define UBER_FS_PATH "shaders/uber.fs"
+
+    g_uber_vs_src = read_src_from_file(UBER_VS_PATH);
+    if (!g_uber_vs_src)
+    {
+        Error(Renderer, "missing shader file: %s", UBER_VS_PATH);
+        return false;
+    }
+
+    g_uber_fs_src = read_src_from_file(UBER_FS_PATH);
+    if (!g_uber_fs_src)
+    {
+        Error(Renderer, "missing shader file: %s", UBER_FS_PATH);
+        return false;
+    }
+
     // TODO: gles - init shaders
     // https://www.khronos.org/webgl/wiki/WebGL_and_OpenGL_Differences
     char msg[512];
     const auto vs = glCreateShader(GL_VERTEX_SHADER);
-    GL_CHECK(glShaderSource(vs, 1, &g_vShader, nullptr));
+    GL_CHECK(glShaderSource(vs, 1, &g_uber_vs_src, nullptr));
     GL_CHECK(glCompileShader(vs));
     GLint status = GL_TRUE;
     GL_CHECK(glGetShaderiv(vs, GL_COMPILE_STATUS, &status));
@@ -199,7 +274,7 @@ bool Render_Init(SDL_Window *window)
     }
 
     const auto ps = glCreateShader(GL_FRAGMENT_SHADER);
-    GL_CHECK(glShaderSource(ps, 1, &g_pShader, nullptr));
+    GL_CHECK(glShaderSource(ps, 1, &g_uber_fs_src, nullptr));
     GL_CHECK(glCompileShader(ps));
     status = GL_TRUE;
     GL_CHECK(glGetShaderiv(ps, GL_COMPILE_STATUS, &status));
@@ -221,12 +296,16 @@ bool Render_Init(SDL_Window *window)
         Error(Renderer, "program link: %s", msg);
     }
 
-    _inPos = glGetAttribLocation(_pProg, "inPos");
-    GL_CHECK_ATTRIB(_inPos);
-    _inUV = glGetAttribLocation(_pProg, "inUV");
-    GL_CHECK_ATTRIB(_inUV);
-    _inColor = glGetAttribLocation(_pProg, "inColor");
-    GL_CHECK_ATTRIB(_inColor);
+    _uUV = glGetUniformLocation(_pProg, "uUV");
+    GL_CHECK_ATTRIB(_uUV);
+    _uColor = glGetUniformLocation(_pProg, "uColor");
+    GL_CHECK_ATTRIB(_uColor);
+    _uAlphaTest = glGetUniformLocation(_pProg, "uAlphaTest");
+    GL_CHECK_ATTRIB(_uAlphaTest);
+    _uMirror = glGetUniformLocation(_pProg, "uMirror");
+    GL_CHECK_ATTRIB(_uMirror);
+    _uColorMapEnabled = glGetUniformLocation(_pProg, "uColorMapEnabled");
+    GL_CHECK_ATTRIB(_uColorMapEnabled);
     _uProjectionView = glGetUniformLocation(_pProg, "uProjectionView");
     GL_CHECK_ATTRIB(_uProjectionView);
     _uModel = glGetUniformLocation(_pProg, "uModel");
@@ -234,43 +313,7 @@ bool Render_Init(SDL_Window *window)
     _uTex = glGetUniformLocation(_pProg, "uTex");
     GL_CHECK_ATTRIB(_uTex);
     GL_CHECK(glUseProgram(_pProg));
-
-    // clang-format off
-    const GenericVertex data[] = {
-        { { -1.0f, -1.0f }, { 0.0f, 0.0f }, 0xff00ffff },
-        { { -1.0f,  1.0f }, { 0.0f, 1.0f }, 0xff00ffff },
-        { {  1.0f,  1.0f }, { 1.0f, 1.0f }, 0xff00ffff },
-        { {  1.0f, -1.0f }, { 1.0f, 1.0f }, 0xff00ffff },
-    };
-    const unsigned int idx[] = { 0, 1, 2, 3 };
-#if !defined(USE_GLES2)
-    GL_CHECK(glGenVertexArrays(1, &_vao));
-    GL_CHECK(glBindVertexArray(_vao));
-#endif // #if !defined(USE_GLES2)
-    GL_CHECK(glGenBuffers(2, _vibuffers));
-    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, _vibuffers[0]));
-    GL_CHECK(glBufferData(GL_ARRAY_BUFFER, 4 * sizeof(GenericVertex), data, GL_STATIC_DRAW));
-    GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, _vibuffers[1]));
-    GL_CHECK(glBufferData(GL_ELEMENT_ARRAY_BUFFER, 4 * sizeof(unsigned int), idx, GL_STATIC_DRAW));
-
-    GL_CHECK(glEnableVertexAttribArray(_inPos));
-    GL_CHECK(glEnableVertexAttribArray(_inUV));
-    GL_CHECK(glEnableVertexAttribArray(_inColor));
-    GL_CHECK(glVertexAttribPointer(_inPos, 2, GL_FLOAT, GL_FALSE, sizeof(GenericVertex), (GLvoid*)OFFSETOF(GenericVertex, pos)));
-    GL_CHECK(glVertexAttribPointer(_inUV, 2, GL_FLOAT, GL_FALSE, sizeof(GenericVertex), (GLvoid*)OFFSETOF(GenericVertex, uv)));
-    GL_CHECK(glVertexAttribPointer(_inColor, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(GenericVertex), (GLvoid*)OFFSETOF(GenericVertex, col)));
-
-    GL_CHECK(glGenTextures(1, &_defaultTex));
-    GL_CHECK(glBindTexture(GL_TEXTURE_2D, _defaultTex));
-    GL_CHECK(glTexImage2D(GL_TEXTURE_2D, 0,GL_RGBA, 8, 8, 0, GL_RGBA, GL_UNSIGNED_BYTE, _missingTexture));
-    GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
-    GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
-
-    GL_CHECK(glUniform1i(_uTex, 0)); // texture unit 0
-    GL_CHECK(glDrawArrays(GL_TRIANGLE_FAN, 0, 4));
-    GL_CHECK(glUseProgram(0));
-    // clang-format on
-#endif
+#endif // #else // #if defined(USE_GL2)
     g_render.context = context;
     g_render.window = window;
     return true;
@@ -281,6 +324,16 @@ void Render_Shutdown()
     if (g_render.context != nullptr)
     {
         SDL_GL_DeleteContext(g_render.context);
+    }
+
+    if (g_uber_fs_src)
+    {
+        free((void *)g_uber_fs_src);
+    }
+
+    if (g_uber_vs_src)
+    {
+        free((void *)g_uber_vs_src);
     }
 }
 
@@ -316,7 +369,7 @@ bool HACKRender_SetViewParams(const SetViewParamsCmd &cmd)
         float(cmd.camera_farZ));
     GL_CHECK(glUseProgram(_pProg));
     GL_CHECK(glUniformMatrix4fv(_uProjectionView, 1, false, glm::value_ptr(projection)));
-    GL_CHECK(glUseProgram(0));
+    // GL_CHECK(glUseProgram(0));
 #endif
     return true;
 }
@@ -556,6 +609,10 @@ texture_handle_t Render_CreateTexture2D(
         s_pixelFormatToOGLFormat[pixelsFormat],
         pixels));
 
+    if (width == 242 && height == 26) {
+        extern texture_handle_t g_debug_texture;
+        g_debug_texture = tex;
+    }
     return tex;
 }
 

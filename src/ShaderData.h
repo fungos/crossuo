@@ -7,33 +7,8 @@
 
 // clang-format off
 
-static const char *g_vShader =
-    GL_SHADER_HEADER
-    GL_SHADER_ATTRIBUTE(0) "vec2 inPos;\n"
-    GL_SHADER_ATTRIBUTE(1) "vec2 inUV;\n"
-    GL_SHADER_ATTRIBUTE(2) "vec4 inColor;\n"
-    "uniform mat4 uProjectionView;\n"
-    "uniform mat4 uModel;\n"
-    GL_SHADER_OUT "vec2 vUV;\n"
-    GL_SHADER_OUT "vec4 vColor;\n"
-    "void main()\n"
-    "{\n"
-    "    vUV = inUV;\n"
-    "    vColor = inColor;\n"
-    "    gl_Position = uProjectionView * uModel * vec4(inPos, 0.0, 1.0);\n"
-    "}";
-
-static const char *g_pShader =
-    GL_SHADER_HEADER
-    GL_SHADER_IN "vec2 vUV;\n"
-    GL_SHADER_IN "vec4 vColor;\n"
-    "uniform sampler2D uTex;\n"
-    "void main()\n"
-    "{\n"
-    "    vec4 c = vColor * texture2D(uTex, vUV);\n"
-    //"    c.a = 1.0f;\n"
-    "    gl_FragColor = c;\n"
-    "}";
+extern const char* g_uber_vs_src;
+extern const char* g_uber_fs_src;
 
 
 #if defined(USE_GLES) || defined(USE_GL3)
@@ -55,12 +30,6 @@ enum SHADER_DRAW_MODE
     SDM_SHADOW = 12
 };
 */
-
-static const char *g_Vert_ShaderData = g_vShader;
-static const char *g_Frag_DeathShaderData = g_pShader;
-static const char *g_Frag_LightShaderData = g_pShader;
-static const char *g_Frag_FontShaderData = g_pShader;
-static const char *g_Frag_ColorizerShaderData = g_pShader;
 
 #endif
 

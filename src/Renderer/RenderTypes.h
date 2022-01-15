@@ -55,6 +55,21 @@ struct float3
     float operator[](size_t i) const;
     bool operator==(const float3 &other) const;
     bool operator!=(const float3 &other) const;
+
+    float3& operator+=(const float3& other) {
+        this->rgb[0] += other.rgb[0];
+        this->rgb[1] += other.rgb[1];
+        this->rgb[2] += other.rgb[2];
+        return *this;
+    }
+
+    float3 operator+(const float3& other) {
+        return float3(
+            rgb[0] + other.rgb[0],
+            rgb[1] + other.rgb[1],
+            rgb[2] + other.rgb[2]
+        );
+    }
 };
 
 // TODO simd-friendly types
@@ -255,24 +270,30 @@ struct RenderState
 
     struct
     {
-        int left;
-        int right;
-        int bottom;
-        int top;
-        int nearZ;
-        int farZ;
-        float scale;
-        bool proj_flipped_y;
-    } viewport = { 0, 0, 0, 0, 0, 0, 1.f, false };
+        int left = 0;
+        int right = 0;
+        int bottom = 0;
+        int top = 0;
+        int nearZ = 0;
+        int farZ = 0;
+        float scale = 1.f;
+        bool proj_flipped_y = false;
+        float ortho[6] = {};
+    } viewport;
 
     struct
     {
-        int x;
-        int y;
-        uint32_t width;
-        uint32_t height;
-        bool enabled;
-    } scissor = { 0, 0, 0, 0, false };
+        float3 pos = {0.f, 0.f, 0.f};
+    } model_modifier;
+
+    struct
+    {
+        int x = 0;
+        int y = 0;
+        uint32_t width = 0;
+        uint32_t height = 0;
+        bool enabled = false;
+    } scissor;
 
     ShaderPipeline pipeline;
     RenderStateUniformCache uniformCache;

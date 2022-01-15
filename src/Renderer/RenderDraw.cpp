@@ -21,9 +21,11 @@
 
 #if defined(USE_GLES) || defined(USE_GL3)
 extern uint32_t _defaultTex;
-extern int _inPos;
-extern int _inColor;
-extern int _inUV;
+extern int _uColor;
+extern int _uAlphaTest;
+extern int _uMirror;
+extern int _uColorMapEnabled;
+extern int _uUV;
 extern int _uProjectionView;
 extern int _uModel;
 extern int _uTex;
@@ -70,216 +72,173 @@ bool RenderDraw_SetFrameBuffer(const SetFrameBufferCmd &cmd, RenderState *state)
     return RenderState_SetFrameBuffer(state, cmd.frameBuffer);
 }
 
+texture_handle_t g_debug_texture = RENDER_TEXTUREHANDLE_INVALID;
+
 bool RenderDraw_DrawQuad(const DrawQuadCmd &cmd, RenderState *state)
 {
     ScopedPerfMarker(__FUNCTION__);
+
+    if (cmd.texture == g_debug_texture) {
+        int volatile a = 1;
+        a++;
+    }
+
     RenderState_SetTexture(state, TextureType::TextureType_Texture2D, cmd.texture);
     if (cmd.rgba != g_ColorInvalid)
     {
         RenderState_SetColor(state, cmd.rgba);
     }
-    // clang-format off
-    const float uv[] = {
-         0.0f, cmd.v,
-        cmd.u, cmd.v,
-         0.0f, 0.0f,
-        cmd.u, 0.0f,
-    };
-    const float v[] = {
-        0.0f, float(cmd.height),
-        float(cmd.width), float(cmd.height),
-        0.0f, 0.0f,
-        float(cmd.width), 0.0f,
-    };
-    const float v_mirrored[] = {
-        float(cmd.width), float(cmd.height),
-        0.0f, float(cmd.height),
-        float(cmd.width), 0.0f,
-        0.0f, 0.0f,
-    };
-    // clang-format on
-    const auto &vb = cmd.mirrored ? v_mirrored : v;
-#if defined(USE_GL2)
-    glTranslatef((GLfloat)cmd.x, (GLfloat)cmd.y, 0.0f);
-    glBegin(GL_TRIANGLE_STRIP);
-    for (int i = 0; i < sizeof(v); i += 2)
+
+    GL_CHECK(glUseProgram(_pProg));
+
+    static bool s_init = false;
+    static uint32_t s_vao;
+
+    GL_CHECK(glUniform1i(_uMirror, cmd.mirrored));
+    GL_CHECK(glUniform2f(_uUV, cmd.u, cmd.v));
+
+    glm::mat4 model(1.0f);
+    const float3 acc_translate = state->model_modifier.pos + float3(float(cmd.x), float(cmd.y), 0.f);
+    model = glm::translate(model, glm::vec3(acc_translate[0], acc_translate[1], acc_translate[2]));
+    // model = glm::translate(model, glm::vec3(cmd.x, cmd.y, 0.0f));
+    // model = glm::translate(model, glm::vec3(0.5f * cmd.width, 0.5f * cmd.height, 0.0f));
+    // model = glm::rotate(model, glm::radians(0.f), glm::vec3(0.0f, 0.0f, 1.0f));
+    // model = glm::translate(
+    //     model,
+    //     glm::vec3(
+    //         0.5f * cmd.width + -0.5f * cmd.width, 0.5f * cmd.height + -0.5f * cmd.height, 0.0f));
+
+    model = glm::scale(model, glm::vec3(cmd.width, cmd.height, 1.0f));
+
+    GL_CHECK(glUniformMatrix4fv(_uModel, 1, false, glm::value_ptr(model)));
+
+    if (!s_init)
     {
-        glTexCoord2f(uv[i], uv[i + 1]);
-        glVertex2i(vb[i], vb[i + 1]);
-    }
-    /*
-    if (!cmd.mirrored)
-    {
-        glTexCoord2f(0.0f, cmd.v);
-        glVertex2i(0, GLint(cmd.height));
-        glTexCoord2f(cmd.u, cmd.v);
-        glVertex2i(cmd.width, GLint(cmd.height));
-        glTexCoord2f(0.0f, 0.0f);
-        glVertex2i(0, 0);
-        glTexCoord2f(cmd.u, 0.0f);
-        glVertex2i(cmd.width, 0);
+        s_init = true;
+
+        GL_CHECK(glGenVertexArrays(1, &s_vao));
+        GL_CHECK(glBindVertexArray(s_vao));
     }
     else
     {
-        glTexCoord2f(0.0f, cmd.v);
-        glVertex2i(cmd.width, GLint(cmd.height));
-        glTexCoord2f(cmd.u, cmd.v);
-        glVertex2i(0, GLint(cmd.height));
-        glTexCoord2f(0.0f, 0.0f);
-        glVertex2i(cmd.width, 0);
-        glTexCoord2f(cmd.u, 0.0f);
-        glVertex2i(0, 0);
+        GL_CHECK(glBindVertexArray(s_vao));
     }
-    */
-    glEnd();
-    glTranslatef(-(GLfloat)cmd.x, -(GLfloat)cmd.y, 0.0f);
-#else
-    // TODO: gles - quad
-    glm::mat4 model(1.0f);
-    model = glm::translate(model, glm::vec3(cmd.x, cmd.y, 0.0f));
-
-    const GenericVertex data[] = {
-        { { -1.0f, -1.0f }, { 0.0f, 0.0f }, 0xff00ffff },
-        { { -1.0f, 1.0f }, { 0.0f, 1.0f }, 0xff00ffff },
-        { { 1.0f, 1.0f }, { 1.0f, 1.0f }, 0xff00ffff },
-        { { 1.0f, -1.0f }, { 1.0f, 1.0f }, 0xff00ffff },
-    };
-    const unsigned int idx[] = { 0, 1, 2, 3 };
-#if !defined(USE_GLES2)
-    uint32_t vao;
-    GL_CHECK(glGenVertexArrays(1, &vao));
-    GL_CHECK(glBindVertexArray(vao));
-#endif // #if !defined(USE_GLES2)
-    uint32_t buffers[2];
-    GL_CHECK(glGenBuffers(2, buffers));
-    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
-    GL_CHECK(glBufferData(GL_ARRAY_BUFFER, 4 * sizeof(GenericVertex), data, GL_STATIC_DRAW));
-    GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[1]));
-    GL_CHECK(glBufferData(GL_ELEMENT_ARRAY_BUFFER, 4 * sizeof(unsigned int), idx, GL_STATIC_DRAW));
-
-    GL_CHECK(glUseProgram(_pProg));
-    GL_CHECK(glUniformMatrix4fv(_uModel, 1, false, glm::value_ptr(model)));
-    //GL_CHECK(glVertexAttribPointer(_inUV, 2, GL_FLOAT, GL_FALSE, 0, uv));
-    //GL_CHECK(glEnableVertexAttribArray(_inUV));
-    //GL_CHECK(glVertexAttribPointer(_inPos, 2, GL_FLOAT, GL_FALSE, 0, vb));
-    //GL_CHECK(glEnableVertexAttribArray(_inPos));
+    GL_CHECK(glUniform1i(_uColorMapEnabled, 1));
+    GL_CHECK(glActiveTexture(GL_TEXTURE0));
     GL_CHECK(glUniform1i(_uTex, 0));
-    GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, 0, 4));
-    GL_CHECK(glUseProgram(0));
-
-    GL_CHECK(glDeleteBuffers(2, buffers));
-#if !defined(USE_GLES2)
-    GL_CHECK(glDeleteVertexArrays(1, &vao));
-#endif // #if !defined(USE_GLES2)
-#endif
+    GL_CHECK(glDrawArrays(GL_TRIANGLES, 0, 6));
     return true;
 }
 
 bool RenderDraw_DrawRotatedQuad(const DrawRotatedQuadCmd &cmd, RenderState *state)
 {
-    ScopedPerfMarker(__FUNCTION__);
-
-    RenderState_SetTexture(state, TextureType::TextureType_Texture2D, cmd.texture);
-    if (cmd.rgba != g_ColorInvalid)
-    {
-        RenderState_SetColor(state, cmd.rgba);
-    }
-    // clang-format off
-    const float uv[] = {
-         0.0f, cmd.v,
-        cmd.u, cmd.v,
-         0.0f, 0.0f,
-        cmd.u, 0.0f,
-    };
-    const float v[] = {
-        0.0f, float(cmd.height),
-        float(cmd.width), float(cmd.height),
-        0.0f, 0.0f,
-        float(cmd.width), 0.0f,
-    };
-    const float v_mirrored[] = {
-        float(cmd.width), float(cmd.height),
-        0.0f, float(cmd.height),
-        float(cmd.width), 0.0f,
-        0.0f, 0.0f,
-    };
-    // clang-format on
-    const auto &vb = cmd.mirrored ? v_mirrored : v;
-#if defined(USE_GL2)
-    glTranslatef((GLfloat)cmd.x, (GLfloat)cmd.y, 0.0f);
-    glRotatef(cmd.angle, 0.0f, 0.0f, 1.0f);
-    glBegin(GL_TRIANGLE_STRIP);
-    for (int i = 0; i < sizeof(v); i += 2)
-    {
-        glTexCoord2f(uv[i], uv[i + 1]);
-        glVertex2i(vb[i], vb[i + 1]);
-    }
-    /*if (!cmd.mirrored)
-    {
-        glTexCoord2f(0.0f, cmd.v);
-        glVertex2i(0, cmd.height);
-        glTexCoord2f(cmd.u, cmd.v);
-        glVertex2i(cmd.width, cmd.height);
-        glTexCoord2f(0.0f, 0.0f);
-        glVertex2i(0, 0);
-        glTexCoord2f(cmd.u, 0.0f);
-        glVertex2i(cmd.width, 0);
-    }
-    else
-    {
-        glTexCoord2f(0.0f, cmd.v);
-        glVertex2i(cmd.width, cmd.height);
-        glTexCoord2f(cmd.u, cmd.v);
-        glVertex2i(0, cmd.height);
-        glTexCoord2f(0.0f, 0.0f);
-        glVertex2i(cmd.width, 0);
-        glTexCoord2f(cmd.u, 0.0f);
-        glVertex2i(0, 0);
-    }*/
-    glEnd();
-    glTranslatef(-(GLfloat)cmd.x, -(GLfloat)cmd.y, 0.0f);
-    glRotatef(cmd.angle, 0.0f, 0.0f, -1.0f);
-#else
-    // TODO: gles - rotated quad
-    glm::mat4 model(1.0f);
-    model = glm::translate(model, glm::vec3(cmd.x, cmd.y, 0.0f));
-    model = glm::rotate(model, cmd.angle, glm::vec3(0.0f, 0.0f, 1.0f));
-
-    const GenericVertex data[] = {
-        { { -1.0f, -1.0f }, { 0.0f, 0.0f }, 0xff00ffff },
-        { { -1.0f, 1.0f }, { 0.0f, 1.0f }, 0xff00ffff },
-        { { 1.0f, 1.0f }, { 1.0f, 1.0f }, 0xff00ffff },
-        { { 1.0f, -1.0f }, { 1.0f, 1.0f }, 0xff00ffff },
-    };
-    const unsigned int idx[] = { 0, 1, 2, 3 };
-#if !defined(USE_GLES2)
-    uint32_t vao;
-    GL_CHECK(glGenVertexArrays(1, &vao));
-    GL_CHECK(glBindVertexArray(vao));
-#endif // #if !defined(USE_GLES2)
-    uint32_t buffers[2];
-    GL_CHECK(glGenBuffers(2, buffers));
-    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
-    GL_CHECK(glBufferData(GL_ARRAY_BUFFER, 4 * sizeof(GenericVertex), data, GL_STATIC_DRAW));
-    GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[1]));
-    GL_CHECK(glBufferData(GL_ELEMENT_ARRAY_BUFFER, 4 * sizeof(unsigned int), idx, GL_STATIC_DRAW));
-
-    GL_CHECK(glUseProgram(_pProg));
-    GL_CHECK(glUniformMatrix4fv(_uModel, 1, false, glm::value_ptr(model)));
-    //GL_CHECK(glVertexAttribPointer(_inUV, 2, GL_FLOAT, GL_FALSE, 0, uv));
-    //GL_CHECK(glEnableVertexAttribArray(_inUV));
-    //GL_CHECK(glVertexAttribPointer(_inPos, 2, GL_FLOAT, GL_FALSE, 0, vb));
-    //GL_CHECK(glEnableVertexAttribArray(_inPos));
-    GL_CHECK(glUniform1i(_uTex, 0));
-    GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, 0, 4));
-    GL_CHECK(glUseProgram(0));
-
-    GL_CHECK(glDeleteBuffers(2, buffers));
-#if !defined(USE_GLES2)
-    GL_CHECK(glDeleteVertexArrays(1, &vao));
-#endif // #if !defined(USE_GLES2)
-#endif
+    (void)cmd;
+    (void)state;
     return true;
+    //     ScopedPerfMarker(__FUNCTION__);
+
+    //     RenderState_SetTexture(state, TextureType::TextureType_Texture2D, cmd.texture);
+    //     if (cmd.rgba != g_ColorInvalid)
+    //     {
+    //         RenderState_SetColor(state, cmd.rgba);
+    //     }
+    //     // clang-format off
+    //     const float uv[] = {
+    //          0.0f, cmd.v,
+    //         cmd.u, cmd.v,
+    //          0.0f, 0.0f,
+    //         cmd.u, 0.0f,
+    //     };
+    //     const float v[] = {
+    //         0.0f, float(cmd.height),
+    //         float(cmd.width), float(cmd.height),
+    //         0.0f, 0.0f,
+    //         float(cmd.width), 0.0f,
+    //     };
+    //     const float v_mirrored[] = {
+    //         float(cmd.width), float(cmd.height),
+    //         0.0f, float(cmd.height),
+    //         float(cmd.width), 0.0f,
+    //         0.0f, 0.0f,
+    //     };
+    //     // clang-format on
+    //     const auto &vb = cmd.mirrored ? v_mirrored : v;
+    // #if defined(USE_GL2)
+    //     glTranslatef((GLfloat)cmd.x, (GLfloat)cmd.y, 0.0f);
+    //     glRotatef(cmd.angle, 0.0f, 0.0f, 1.0f);
+    //     glBegin(GL_TRIANGLE_STRIP);
+    //     for (int i = 0; i < sizeof(v); i += 2)
+    //     {
+    //         glTexCoord2f(uv[i], uv[i + 1]);
+    //         glVertex2i(vb[i], vb[i + 1]);
+    //     }
+    //     /*if (!cmd.mirrored)
+    //     {
+    //         glTexCoord2f(0.0f, cmd.v);
+    //         glVertex2i(0, cmd.height);
+    //         glTexCoord2f(cmd.u, cmd.v);
+    //         glVertex2i(cmd.width, cmd.height);
+    //         glTexCoord2f(0.0f, 0.0f);
+    //         glVertex2i(0, 0);
+    //         glTexCoord2f(cmd.u, 0.0f);
+    //         glVertex2i(cmd.width, 0);
+    //     }
+    //     else
+    //     {
+    //         glTexCoord2f(0.0f, cmd.v);
+    //         glVertex2i(cmd.width, cmd.height);
+    //         glTexCoord2f(cmd.u, cmd.v);
+    //         glVertex2i(0, cmd.height);
+    //         glTexCoord2f(0.0f, 0.0f);
+    //         glVertex2i(cmd.width, 0);
+    //         glTexCoord2f(cmd.u, 0.0f);
+    //         glVertex2i(0, 0);
+    //     }*/
+    //     glEnd();
+    //     glTranslatef(-(GLfloat)cmd.x, -(GLfloat)cmd.y, 0.0f);
+    //     glRotatef(cmd.angle, 0.0f, 0.0f, -1.0f);
+    // #else
+    //     // TODO: gles - rotated quad
+    //     glm::mat4 model(1.0f);
+    //     model = glm::translate(model, glm::vec3(cmd.x, cmd.y, 0.0f));
+    //     model = glm::rotate(model, cmd.angle, glm::vec3(0.0f, 0.0f, 1.0f));
+
+    //     const GenericVertex vertices[] = {
+    //         { { -1.0f, -1.0f }, { 0.0f, 0.0f } },
+    //         { { -1.0f, 1.0f }, { 0.0f, 1.0f } },
+    //         { { 1.0f, 1.0f }, { 1.0f, 1.0f } },
+    //         { { 1.0f, -1.0f }, { 1.0f, 1.0f } },
+    //     };
+    //     const unsigned int indices[] = { 0, 1, 2, 3 };
+    // #if !defined(USE_GLES2)
+    //     uint32_t vao;
+    //     GL_CHECK(glGenVertexArrays(1, &vao));
+    //     GL_CHECK(glBindVertexArray(vao));
+    // #endif // #if !defined(USE_GLES2)
+    //     uint32_t buffers[2];
+    //     GL_CHECK(glGenBuffers(2, buffers));
+    //     GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
+    //     GL_CHECK(glBufferData(GL_ARRAY_BUFFER, 4 * sizeof(GenericVertex), vertices, GL_STATIC_DRAW));
+    //     GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[1]));
+    //     GL_CHECK(
+    //         glBufferData(GL_ELEMENT_ARRAY_BUFFER, 4 * sizeof(unsigned int), indices, GL_STATIC_DRAW));
+
+    //     GL_CHECK(glUseProgram(_pProg));
+    //     GL_CHECK(glUniformMatrix4fv(_uModel, 1, false, glm::value_ptr(model)));
+    //     //GL_CHECK(glVertexAttribPointer(_uUV, 2, GL_FLOAT, GL_FALSE, 0, uv));
+    //     //GL_CHECK(glEnableVertexAttribArray(_uUV));
+    //     //GL_CHECK(glVertexAttribPointer(_inPos, 2, GL_FLOAT, GL_FALSE, 0, vb));
+    //     //GL_CHECK(glEnableVertexAttribArray(_inPos));
+    //     GL_CHECK(glUniform1i(_uTex, 0));
+    //     GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, 0, 4));
+    //     GL_CHECK(glUseProgram(0));
+
+    //     GL_CHECK(glDeleteBuffers(2, buffers));
+    // #if !defined(USE_GLES2)
+    //     GL_CHECK(glDeleteVertexArrays(1, &vao));
+    // #endif // #if !defined(USE_GLES2)
+    // #endif
+    //     return true;
 }
 
 bool RenderDraw_DrawCharacterSitting(const DrawCharacterSittingCmd &cmd, RenderState *state)
@@ -551,8 +510,7 @@ bool RenderDraw_DrawUntexturedQuad(const DrawUntexturedQuadCmd &cmd, RenderState
 {
     ScopedPerfMarker(__FUNCTION__);
 
-    const auto colored =
-        memcmp(g_ColorInvalid.rgba, cmd.color.rgba, sizeof(g_ColorInvalid.rgba)) != 0;
+    const auto colored = cmd.color != g_ColorInvalid;
     const auto blend = colored && cmd.color[3] < 1.f;
     if (colored)
     {
@@ -581,7 +539,43 @@ bool RenderDraw_DrawUntexturedQuad(const DrawUntexturedQuadCmd &cmd, RenderState
     glTranslatef((GLfloat)-cmd.x, (GLfloat)-cmd.y, 0.0f);
     glEnable(GL_TEXTURE_2D);
 #else
-    // TODO: gles
+    GL_CHECK(glUseProgram(_pProg));
+
+    static bool s_init = false;
+    static uint32_t s_vao;
+
+    // GL_CHECK(glUniform2f(_uUV, cmd.u, cmd.v));
+
+    glm::mat4 model(1.0f);
+    model = glm::translate(model, glm::vec3(cmd.x, cmd.y, 0.0f));
+    // model = glm::translate(model, glm::vec3(0.5f * cmd.width, 0.5f * cmd.height, 0.0f));
+    // model = glm::rotate(model, glm::radians(0.f), glm::vec3(0.0f, 0.0f, 1.0f));
+    // model = glm::translate(
+    //     model,
+    //     glm::vec3(
+    //         0.5f * cmd.width + -0.5f * cmd.width, 0.5f * cmd.height + -0.5f * cmd.height, 0.0f));
+
+    model = glm::scale(model, glm::vec3(cmd.width, cmd.height, 1.0f));
+
+    GL_CHECK(glUniformMatrix4fv(_uModel, 1, false, glm::value_ptr(model)));
+
+    if (!s_init)
+    {
+        s_init = true;
+
+        GL_CHECK(glGenVertexArrays(1, &s_vao));
+        GL_CHECK(glBindVertexArray(s_vao));
+    }
+    else
+    {
+        GL_CHECK(glBindVertexArray(s_vao));
+    }
+
+    // GL_CHECK(glActiveTexture(GL_TEXTURE0));
+    // GL_CHECK(glUniform1i(_uTex, 0));
+    GL_CHECK(glUniform1i(_uColorMapEnabled, 0));
+
+    GL_CHECK(glDrawArrays(GL_TRIANGLES, 0, 6));
 #endif
 
     if (colored)
@@ -818,58 +812,8 @@ bool RenderDraw_GetFrameBufferPixels(const GetFrameBufferPixelsCmd &cmd, RenderS
     return true;
 }
 
-static void RenderDraw_DrawTest()
-{
-    // clang-format off
-#if defined(USE_GL3) || defined(USE_GLES2)
-    //ScopedPerfMarker(__FUNCTION__);
-
-    const GenericVertex data[] = {
-        { { -1.0f, -1.0f }, { 0.0f, 0.0f }, 0xff00ffff },
-        { { -1.0f,  1.0f }, { 0.0f, 1.0f }, 0xff00ffff },
-        { {  1.0f,  1.0f }, { 1.0f, 1.0f }, 0xff00ffff },
-        { {  1.0f, -1.0f }, { 1.0f, 1.0f }, 0xff00ffff },
-    };
-    const unsigned int idx[] = { 0, 1, 2, 3 };
-    GL_CHECK(glClearColor(0.4f, 0.0f, 0.0f, 0.0f));
-    GL_CHECK(glClear(GL_COLOR_BUFFER_BIT));
-    GL_CHECK(glUseProgram(_pProg));
-
-    uint32_t buffers[2];
-    GL_CHECK(glGenBuffers(2, buffers));
-    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
-    GL_CHECK(glBufferData(GL_ARRAY_BUFFER, sizeof(data), data, GL_STATIC_DRAW));
-    GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[1]));
-    GL_CHECK(glBufferData(GL_ELEMENT_ARRAY_BUFFER, 4 * sizeof(unsigned int), idx, GL_STATIC_DRAW));
-
-#if !defined(USE_GLES2)
-    uint32_t vao = 0;
-    GL_CHECK(glGenVertexArrays(1, &vao));
-    GL_CHECK(glBindVertexArray(vao));
-#endif // #if !defined(USE_GLES2)
-
-    GL_CHECK(glEnableVertexAttribArray(_inPos));
-    GL_CHECK(glEnableVertexAttribArray(_inUV));
-    GL_CHECK(glEnableVertexAttribArray(_inColor));
-    GL_CHECK(glVertexAttribPointer(_inPos, 2, GL_FLOAT, GL_FALSE, sizeof(GenericVertex), (GLvoid*)OFFSETOF(GenericVertex, pos)));
-    GL_CHECK(glVertexAttribPointer(_inUV, 2, GL_FLOAT, GL_FALSE, sizeof(GenericVertex), (GLvoid*)OFFSETOF(GenericVertex, uv)));
-    GL_CHECK(glVertexAttribPointer(_inColor, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(GenericVertex), (GLvoid*)OFFSETOF(GenericVertex, col)));
-
-    GL_CHECK(glUniform1i(_uTex, 0)); // texture unit 0
-    GL_CHECK(glDrawArrays(GL_TRIANGLE_FAN, 0, 4));
-
-    GL_CHECK(glDeleteBuffers(2, buffers));
-#if !defined(USE_GLES2)
-    GL_CHECK(glDeleteVertexArrays(1, &vao));
-#endif // #if !defined(USE_GLES2)
-    GL_CHECK(glUseProgram(0));
-#endif // #if defined(USE_GL3) || defined(USE_GLES2)
-    // clang-format on
-}
-
 bool RenderDraw_Execute(RenderCmdList *cmdList)
 {
-    RenderDraw_DrawTest();
     if (cmdList->immediateMode)
     {
         return false;

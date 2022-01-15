@@ -85,7 +85,7 @@
 #define GL_CHECK_ATTRIB(x) \
     do { \
         if (x == -1) { \
-            Error(Renderer, "Attib %s not found or removed from shader", TOSTRING(x)); \
+            Error(Renderer, "Attrib %s not found or removed from shader", TOSTRING(x)); \
             exit(-68); \
         } \
     } while(0)
@@ -95,7 +95,7 @@
         const auto e = glGetError(); \
         if (e != GL_NO_ERROR) { \
             Error(Renderer, TOSTRING(statement) " returned error: 0x%04x", e); \
-            exit(-69); \
+            assert( false ); \
         } \
     } while(0)
 
@@ -118,7 +118,13 @@ struct GenericVertex
 {
     float pos[2];
     float uv[2];
-    unsigned int col;
+    float col[4];
+};
+
+struct GenericVertexNoColor
+{
+    float pos[2];
+    float uv[2];
 };
 
 #if defined(XUO_LOCAL_HEADERS)

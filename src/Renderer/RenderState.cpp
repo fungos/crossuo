@@ -11,9 +11,11 @@
 #define countof(xarray) (sizeof(xarray) / sizeof(xarray[0]))
 
 #if defined(USE_GLES) || defined(USE_GL3)
-extern int _inPos;
-extern int _inColor;
-extern int _inUV;
+extern int _uColor;
+extern int _uAlphaTest;
+extern int _uMirror;
+extern int _uColorMapEnabled;
+extern int _uUV;
 extern int _uProjectionView;
 extern int _uModel;
 extern int _uTex;
@@ -61,10 +63,10 @@ bool RenderState_FlushState(RenderState *state)
     glLoadIdentity();
 #else
     // TODO: gles - model identity
-    glm::mat4 identity(1.0f);
-    GL_CHECK(glUseProgram(_pProg));
-    GL_CHECK(glUniformMatrix4fv(_uModel, 1, false, glm::value_ptr(identity)));
-    GL_CHECK(glUseProgram(0));
+    // glm::mat4 identity(1.0f);
+    // GL_CHECK(glUseProgram(_pProg));
+    // GL_CHECK(glUniformMatrix4fv(_uModel, 1, false, glm::value_ptr(identity)));
+    // GL_CHECK(glUseProgram(0));
 #endif
 
     // RenderState_SetShaderPipeline(state, &state->pipeline, true);
@@ -78,20 +80,52 @@ bool RenderState_FlushState(RenderState *state)
 bool RenderState_SetAlphaTest(
     RenderState *state, bool enabled, AlphaTestFunc func, float ref, bool forced)
 {
-    static GLenum s_alphaTestfuncToOGLFunc[] = {
-        GL_NEVER,    // AlphaTest_NeverPass
-        GL_ALWAYS,   // AlphaTest_AlwaysPass
-        GL_EQUAL,    // AlphaTest_Equal
-        GL_NOTEQUAL, // AlphaTest_Different
-        GL_LESS,     // AlphaTest_Less
-        GL_LEQUAL,   // AlphaTest_LessOrEqual
-        GL_GREATER,  // AlphaTest_Greater
-        GL_GEQUAL,   // AlphaTest_GreaterOrEqual
-    };
+//     static GLenum s_alphaTestfuncToOGLFunc[] = {
+//         GL_NEVER,    // AlphaTest_NeverPass
+//         GL_ALWAYS,   // AlphaTest_AlwaysPass
+//         GL_EQUAL,    // AlphaTest_Equal
+//         GL_NOTEQUAL, // AlphaTest_Different
+//         GL_LESS,     // AlphaTest_Less
+//         GL_LEQUAL,   // AlphaTest_LessOrEqual
+//         GL_GREATER,  // AlphaTest_Greater
+//         GL_GEQUAL,   // AlphaTest_GreaterOrEqual
+//     };
 
-    static_assert(
-        countof(s_alphaTestfuncToOGLFunc) == AlphaTestFunc::AlphaTestFunc_Count,
-        "missing alpha test funcs");
+//     static_assert(
+//         countof(s_alphaTestfuncToOGLFunc) == AlphaTestFunc::AlphaTestFunc_Count,
+//         "missing alpha test funcs");
+
+//     bool changed = false;
+//     if (state->alphaTest.enabled != enabled || forced)
+//     {
+//         changed = true;
+//         state->alphaTest.enabled = enabled;
+// #if defined(USE_GL2)
+//         if (enabled)
+//         {
+//             glEnable(GL_ALPHA_TEST);
+//         }
+//         else
+//         {
+//             glDisable(GL_ALPHA_TEST);
+//         }
+// #endif
+//     }
+
+//     auto differentFuncOrRef = [&]() -> bool {
+//         return state->alphaTest.func != func || state->alphaTest.alphaRef != ref;
+//     };
+
+//     if (enabled &&
+//         (differentFuncOrRef() || (forced && func != AlphaTestFunc::AlphaTestFunc_Invalid)))
+//     {
+//         changed = true;
+//         state->alphaTest.func = func;
+//         state->alphaTest.alphaRef = ref;
+// #if defined(USE_GL2)
+//         glAlphaFunc(s_alphaTestfuncToOGLFunc[func], ref);
+// #endif
+//     }
 
     bool changed = false;
     if (state->alphaTest.enabled != enabled || forced)
@@ -107,9 +141,12 @@ bool RenderState_SetAlphaTest(
         {
             glDisable(GL_ALPHA_TEST);
         }
+#elif defined(USE_GL3)
+        GL_CHECK(glUniform2f(_uAlphaTest, enabled ? 1.f : 0.f, ref));
 #endif
     }
 
+#if !defined(USE_GL3)
     auto differentFuncOrRef = [&]() -> bool {
         return state->alphaTest.func != func || state->alphaTest.alphaRef != ref;
     };
@@ -124,6 +161,10 @@ bool RenderState_SetAlphaTest(
         glAlphaFunc(s_alphaTestfuncToOGLFunc[func], ref);
 #endif
     }
+#else
+    // if this fires, revisit how alpha test is being used (uber.fs)
+    assert(func == AlphaTestFunc::AlphaTestFunc_Greater);
+#endif // #if !defined(USE_GL3)
 
     return changed;
 }
@@ -359,58 +400,7 @@ bool RenderState_SetColor(RenderState *state, float4 color, bool forced)
 #if defined(USE_GL2)
         glColor4f(state->color[0], state->color[1], state->color[2], state->color[3]);
 #else
-        const GenericVertex data[] = {
-            { { -1.0f, -1.0f }, { 0.0f, 0.0f }, 0xff00ffff },
-            { { -1.0f, 1.0f }, { 0.0f, 1.0f }, 0xff00ffff },
-            { { 1.0f, 1.0f }, { 1.0f, 1.0f }, 0xff00ffff },
-            { { 1.0f, -1.0f }, { 1.0f, 1.0f }, 0xff00ffff },
-        };
-        const unsigned int idx[] = { 0, 1, 2, 3 };
-#if !defined(USE_GLES2)
-        uint32_t vao;
-        GL_CHECK(glGenVertexArrays(1, &vao));
-        GL_CHECK(glBindVertexArray(vao));
-#endif // #if !defined(USE_GLES2)
-        uint32_t buffers[2] = {};
-        GL_CHECK(glGenBuffers(2, buffers));
-        GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
-        GL_CHECK(glBufferData(GL_ARRAY_BUFFER, 4 * sizeof(GenericVertex), data, GL_STATIC_DRAW));
-        GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[1]));
-        GL_CHECK(
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER, 4 * sizeof(unsigned int), idx, GL_STATIC_DRAW));
-        GL_CHECK(glUseProgram(_pProg));
-        GL_CHECK(glEnableVertexAttribArray(_inPos));
-        GL_CHECK(glEnableVertexAttribArray(_inUV));
-        GL_CHECK(glEnableVertexAttribArray(_inColor));
-        GL_CHECK(glVertexAttribPointer(
-            _inPos,
-            2,
-            GL_FLOAT,
-            GL_FALSE,
-            sizeof(GenericVertex),
-            (GLvoid *)OFFSETOF(GenericVertex, pos)));
-        GL_CHECK(glVertexAttribPointer(
-            _inUV,
-            2,
-            GL_FLOAT,
-            GL_FALSE,
-            sizeof(GenericVertex),
-            (GLvoid *)OFFSETOF(GenericVertex, uv)));
-        GL_CHECK(glVertexAttribPointer(
-            _inColor,
-            4,
-            GL_UNSIGNED_BYTE,
-            GL_TRUE,
-            sizeof(GenericVertex),
-            (GLvoid *)OFFSETOF(GenericVertex, col)));
-
-        //GL_CHECK(glEnableVertexAttribArray(_inColor));
-        //GL_CHECK(glVertexAttribPointer(_inColor, 4, GL_UNSIGNED_BYTE, GL_FALSE, 0, state->color.rgba));
-        GL_CHECK(glUseProgram(0));
-        GL_CHECK(glDeleteBuffers(2, buffers));
-#if !defined(USE_GLES2)
-        GL_CHECK(glDeleteVertexArrays(1, &vao));
-#endif // #if !defined(USE_GLES2)
+        GL_CHECK(glUniform4f(_uColor, state->color[0], state->color[1], state->color[2], state->color[3]));
 #endif
         return true;
     }
@@ -536,7 +526,7 @@ bool RenderState_DisableShaderPipeline(RenderState *state, bool forced)
 {
     // if (state->pipeline.program != RENDER_SHADERPROGRAM_INVALID || forced)
     {
-        GL_CHECK(glUseProgram(0));
+        // GL_CHECK(glUseProgram(0));
         state->pipeline = ShaderPipeline{};
         state->uniformCache = RenderStateUniformCache{};
 
@@ -676,9 +666,18 @@ bool RenderState_SetViewParams(
             proj_flipped_y ? scaledBottom : scaledTop,
             float(camera_nearZ),
             float(camera_farZ));
+
+        // HACK DEBUG
+        state->viewport.ortho[0] = scaledLeft;
+        state->viewport.ortho[1] = scaledRight;
+        state->viewport.ortho[2] = proj_flipped_y ? scaledTop : scaledBottom;
+        state->viewport.ortho[3] = proj_flipped_y ? scaledBottom : scaledTop;
+        state->viewport.ortho[4] = float(camera_nearZ);
+        state->viewport.ortho[5] = float(camera_farZ);
+
         GL_CHECK(glUseProgram(_pProg));
         GL_CHECK(glUniformMatrix4fv(_uProjectionView, 1, false, glm::value_ptr(projection)));
-        GL_CHECK(glUseProgram(0));
+        // GL_CHECK(glUseProgram(0));
 #endif
         return true;
     }
@@ -690,12 +689,7 @@ bool RenderState_SetModelViewTranslation(RenderState *state, float3 pos, bool fo
 #if defined(USE_GL2)
     glTranslatef(pos[0], pos[1], pos[2]);
 #else
-    // TODO: gles - model translation
-    glm::mat4 translation(1.0f);
-    translation = glm::translate(translation, glm::vec3(pos[0], pos[1], pos[2]));
-    GL_CHECK(glUseProgram(_pProg));
-    GL_CHECK(glUniformMatrix4fv(_uModel, 1, false, glm::value_ptr(translation)));
-    GL_CHECK(glUseProgram(0));
+    state->model_modifier.pos += pos;
 #endif
     return true;
 }

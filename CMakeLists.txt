@@ -16,7 +16,7 @@ endif()
 option(ENABLE_LTO "Enables Link Time Optimization (default: On)" ON)
 option(ENABLE_FORMAT "Enables clang-format (default: On)" ON)
 option(RENDER_GLES2 "Force OpenGL ES2 (default Off)" OFF)
-option(RENDER_GL3 "Force OpenGL 3.x (default Off)" OFF)
+option(RENDER_GL3 "Force OpenGL 3.x (default Off)" ON)
 option(RENDER_GL1 "Force OpenGL 1.1 (automatic)" OFF)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/CMake)
@@ -87,6 +87,7 @@ if (XUO_WINDOWS)
   add_link_options(/ignore:4217 /ignore:4286 /ignore:4049)
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MD")
   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MDd")
+  #add_compile_options(/std:c++17)
 endif()
 
 # DEBUG internal cmake state

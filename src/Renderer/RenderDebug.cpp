@@ -6,6 +6,8 @@
 #include <assert.h>
 #include <common/utils.h> // countof
 #include <common/logging/logging.h>
+#include <tuple>
+#include <stdio.h> // snprintf
 
 #define MATCH_CASE_DRAW_DEBUG(type, cmd, state)                                                    \
     case RenderCommandType::Cmd_##type:                                                            \
@@ -38,7 +40,7 @@ struct
 {
     OpenGLDebugMsgState assert = OGL_DBGMSG_UNSET;
     OpenGLDebugMsgState log = OGL_DBGMSG_UNSET;
-} static s_openglDebugMsgType[OGL_DEBUGMSG_SEVERITY_COUNT];
+} static s_openglDebugMsgType[OGL_DEBUGMSG_TYPE_COUNT];
 
 struct
 {
@@ -49,14 +51,18 @@ struct
 
 static void EnableOpenGLDebugMsgSeverity(GLenum severity, bool assert, bool log)
 {
-    auto &info = s_openglDebugMsgSeverity[severity % OGL_DEBUGMSG_SEVERITY_COUNT];
+    auto sev_idx = severity % countof(s_openglDebugMsgSeverity);
+
+    auto &info = s_openglDebugMsgSeverity[sev_idx];
     info.assert = assert ? OGL_DBGMSG_ENABLED : OGL_DBGMSG_DISABLED;
     info.log = log ? OGL_DBGMSG_ENABLED : OGL_DBGMSG_DISABLED;
 }
 
 static void EnableOpenGLDebugMsgType(GLenum type, bool assert, bool log)
 {
-    auto &info = s_openglDebugMsgType[type % OGL_DEBUGMSG_TYPE_COUNT];
+    auto type_idx = type % countof(s_openglDebugMsgType);
+
+    auto &info = s_openglDebugMsgType[type_idx];
     info.assert = assert ? OGL_DBGMSG_ENABLED : OGL_DBGMSG_DISABLED;
     info.log = log ? OGL_DBGMSG_ENABLED : OGL_DBGMSG_DISABLED;
 }
@@ -90,7 +96,7 @@ static void OGLDebugMsgCallback(
 #endif // #if defined(USE_GL2)
 #if defined(USE_GL3)
     static void APIENTRY OGLDebugMsgCallback(
-        uint source,
+        uint32_t source,
         GLenum type,
         GLuint id,
         GLenum severity,

@@ -4354,10 +4354,10 @@ void CGame::CreateObjectHandlesBackground()
 
 void CGame::LoadShaders()
 {
-    g_DeathShader.Init(g_Vert_ShaderData, g_Frag_DeathShaderData, 0);
-    g_ColorizerShader.Init(g_Vert_ShaderData, g_Frag_ColorizerShaderData, 1);
-    g_FontColorizerShader.Init(g_Vert_ShaderData, g_Frag_FontShaderData, 1);
-    g_LightColorizerShader.Init(g_Vert_ShaderData, g_Frag_LightShaderData, 1);
+    g_DeathShader.Init(g_uber_vs_src, g_uber_fs_src, 0);
+    g_ColorizerShader.Init(g_uber_vs_src, g_uber_fs_src, 1);
+    g_FontColorizerShader.Init(g_uber_vs_src, g_uber_fs_src, 1);
+    g_LightColorizerShader.Init(g_uber_vs_src, g_uber_fs_src, 1);
 }
 
 void CGame::LoadClientStartupConfig()
