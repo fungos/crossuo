@@ -31,7 +31,7 @@ message(STATUS "Version: ${XUO_VERSION} (${XUO_VERSION_NUM})")
 #
 # Custom Build Options
 #
-option(ENABLE_LTO "Enables Link Time Optimization (default: On)" ON)
+option(ENABLE_LTO "Enables Link Time Optimization for Release/MinSizeRel (default: On)" ON)
 option(ENABLE_FORMAT "Enables clang-format (default: On)" ON)
 option(RENDER_GLES2 "Force OpenGL ES2 (default Off; web builds only, unsupported on desktop)" OFF)
 option(RENDER_GL3 "Force OpenGL 3.x (default Off)" OFF)
@@ -65,6 +65,21 @@ include(Embedding)
 if (NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release" CACHE STRING
       "Build type (Release/Debug/RelWithDebInfo/MinSizeRel)" FORCE)
+endif()
+
+# Link Time Optimization: the source trees are built into static archives that
+# then link into the single client executable, so -flto only pays off when the
+# bitcode reaches the final link. The flags are added in CMake/Compiler.cmake
+# (below, via include()) for every target of the tree, on the optimized build
+# types only (Debug is meant to stay quick); this check only reports whether
+# the toolchain can do it at all.
+include(CheckIPOSupported)
+if (ENABLE_LTO)
+  check_ipo_supported(RESULT XUO_IPO_SUPPORTED OUTPUT XUO_IPO_ERROR)
+  if (NOT XUO_IPO_SUPPORTED)
+    message(STATUS "LTO requested but unsupported by the toolchain: ${XUO_IPO_ERROR}")
+    set(ENABLE_LTO OFF)
+  endif()
 endif()
 
 # ImGui debug tools (the id-conflict error checker, the "developer mode"

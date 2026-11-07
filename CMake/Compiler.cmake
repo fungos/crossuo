@@ -107,11 +107,46 @@ else()
 endif()
 
 if(ENABLE_LTO)
-  #add_compile_options(-flto)
-  #if(CMAKE_CXX_COMPILER_ID STREQUAL GNU)
-  #  set(CMAKE_AR gcc-ar)
-  #  set(CMAKE_RANLIB gcc-ranlib)
-  #endif()
+  # LTO is applied through the per-configuration flag variables below (the same
+  # variables the cache stores for Release/MInSizeRel) so it reaches the client
+  # and every static archive linked into it: xuocore, common, external,
+  # external/gfx and the assistant are compiled to bitcode and optimized
+  # together at the final link. Only the optimized build types get it - Debug
+  # is meant to stay quick - and -DENABLE_LTO=OFF removes it again (the cache
+  # entry is what a previously configured tree keeps).
+  # Emscripten links through wasm-ld, which has no LTO support.
+  if(XUO_EMSC)
+    message(STATUS "LTO: disabled (emscripten)")
+  elseif(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+    # MSVC: /GL emits the bitcode, /LTCG optimizes it at link time
+    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /GL")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /GL")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /LTCG")
+    set(CMAKE_C_FLAGS_MINSIZEREL "${CMAKE_C_FLAGS_MINSIZEREL} /GL")
+    set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} /GL")
+    set(CMAKE_EXE_LINKER_FLAGS_MINSIZEREL "${CMAKE_EXE_LINKER_FLAGS_MINSIZEREL} /LTCG")
+    message(STATUS "LTO: enabled for Release/MinSizeRel (/GL + /LTCG)")
+  elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    # thin LTO: incremental-friendly, and the spelling apple clang and
+    # upstream clang both understand (lld/gold/bfd all read the bitcode)
+    set(_xuo_lto_flag "-flto=thin")
+  else()
+    set(_xuo_lto_flag "-flto")
+    if(NOT CMAKE_AR)
+      # plain ar cannot read LTO objects; binutils ships the wrappers
+      set(CMAKE_AR gcc-ar)
+      set(CMAKE_RANLIB gcc-ranlib)
+    endif()
+  endif()
+  if(_xuo_lto_flag)
+    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${_xuo_lto_flag}")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${_xuo_lto_flag}")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} ${_xuo_lto_flag}")
+    set(CMAKE_C_FLAGS_MINSIZEREL "${CMAKE_C_FLAGS_MINSIZEREL} ${_xuo_lto_flag}")
+    set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} ${_xuo_lto_flag}")
+    set(CMAKE_EXE_LINKER_FLAGS_MINSIZEREL "${CMAKE_EXE_LINKER_FLAGS_MINSIZEREL} ${_xuo_lto_flag}")
+    message(STATUS "LTO: enabled for Release/MinSizeRel (${_xuo_lto_flag})")
+  endif()
 endif()
 
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
